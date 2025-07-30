@@ -78,13 +78,13 @@ spec:
     - name: build-credentials
       secret:
         secretName: $(params.build-credentials)
-
   stepTemplate:
     env:
       - name: KUBECONFIG
         value: '/cluster-credentials/kubeconfig'
       - name: LOG_FILENAME
         value: '/var/log-dir/deploy-konflux-ci.log'
+
     volumeMounts:
       - name: cluster-credentials
         mountPath: /cluster-credentials
@@ -175,6 +175,17 @@ spec:
           if [[ -n "$IMAGE_TAG" ]]; then
             echo "[INFO] Updating image tag to $IMAGE_TAG"
             yq -i e "(.images.[] | select(.name==\"quay.io/konflux-ci/${COMPONENT_NAME}\")) |= .newTag=\"${IMAGE_TAG}\"" "$KUSTOMIZATION_PATH"
+          fi
+
+          if [[ -n "$COMPONENT_NAME" ]] && [[ "$COMPONENT_NAME" == "release-service" ]]; then
+            echo "[INFO] Adding SEALIGHTS_TOKEN patch"
+            yq -i '.patches += [{
+              "patch": "- op: add\n  path: /spec/template/spec/containers/0/env\n  value: []\n- op: add\n  path: /spec/template/spec/containers/0/env/-\n  value:\n    name: SEALIGHTS_TOKEN\n    valueFrom:\n      secretKeyRef:\n        name: sealights-token\n        key: token\n- op: add\n  path: /spec/template/spec/containers/0/env/-\n  value:\n    name: SEALIGHTS_LOG_LEVEL\n    value: \"debug\"",
+              "target": {
+              "kind": "Deployment",
+              "name": "release-service-controller-manager"
+              }
+            }]' "$KUSTOMIZATION_PATH"
           fi
 
           if [[ -n "$PR_OWNER" && -n "$PR_SHA" ]]; then
